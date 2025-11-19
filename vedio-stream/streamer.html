@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Streamer - Lottery Broadcast</title>
+  <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==">
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:16px;background:#0f1724;color:#e6eef8}
+    .controls{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+    input,button,select{padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.08)}
+    video{width:100%;max-width:720px;border-radius:8px;background:#000}
+    #results{margin-top:12px;background:#07203a;padding:12px;border-radius:8px}
+  </style>
+</head>
+<body>
+  <h2>Lottery — Streamer</h2>
+  <div class="controls">
+    <label>Room: <input id="room" value="main"></label>
+    <button id="join">Join as Streamer</button>
+    <button id="start" disabled>Start Stream</button>
+    <button id="stop" disabled>Stop Stream</button>
+    <span id="status">Not connected</span>
+  </div>
+
+  <video id="local" autoplay playsinline muted></video>
+
+  <div style="margin-top:12px">
+    <button id="draw">Draw Number</button>
+  </div>
+
+  <div id="results"><strong>Latest draw:</strong> <span id="latest">—</span></div>
+
+  <script src="streamer.js"></script>
+</body>
+</html>
