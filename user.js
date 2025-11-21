@@ -1,28 +1,40 @@
-// Load lottery info when page opens
-window.onload = () => {
-    let lottery = getLottery();
+import { db, collection, getDoc, getDocs, setDoc, doc, addDoc, updateDoc, deleteDoc, onSnapshot } from './firebase-init.js';
 
-    if (!lottery.roundName) {
+// Real-time update for current lottery
+function renderCurrentLottery(lottery) {
+    const statusText = document.getElementById("statusText");
+    if (!lottery || !lottery.roundName) {
         document.getElementById("roundName").innerText = "No active round";
+        document.getElementById("ticketPrice").innerText = "";
+        if (statusText) statusText.innerHTML = "<span style='color:#888'>Status: <b>Not Started</b></span>";
+        if (document.getElementById("winningNum")) document.getElementById("winningNum").innerText = "";
         return;
     }
-
     document.getElementById("roundName").innerText = "Round: " + lottery.roundName;
     document.getElementById("ticketPrice").innerText = "Ticket Price: " + lottery.ticketPrice + " birr";
-    
-    document.getElementById("statusText").innerText =
-        "Status: " + lottery.status.toUpperCase();
-
-    if (lottery.winningNumber !== null) {
+    let statusLabel = '';
+    if (lottery.status === 'open') {
+        statusLabel = "<span style='color:#00cc66;font-weight:bold;'>Status: <b>Started</b> 🚦</span>";
+    } else if (lottery.status === 'closed') {
+        statusLabel = "<span style='color:#ff6666;font-weight:bold;'>Status: <b>Stopped</b> ⏹️</span>";
+    } else {
+        statusLabel = "<span style='color:#888'>Status: <b>Not Started</b></span>";
+    }
+    if (statusText) statusText.innerHTML = statusLabel;
+    if (document.getElementById("winningNum") && lottery.winningNumber !== null && lottery.winningNumber !== undefined) {
         document.getElementById("winningNum").innerText = lottery.winningNumber;
     }
-    // initialize countdown and live navigation if configured
     try { initCountdown(); } catch (e) { /* ignore if init not available yet */ }
-};
+}
+
+// Listen for real-time changes
+onSnapshot(doc(db, 'lottery', 'current'), (docSnap) => {
+    renderCurrentLottery(docSnap.exists() ? docSnap.data() : {});
+});
 
 
 // Buy ticket
-function buyTicket() {
+async function buyTicket() {
     let user = document.getElementById("username").value;
     let number = Number(document.getElementById("number").value);
 
@@ -31,7 +43,8 @@ function buyTicket() {
         return;
     }
 
-    let lottery = getLottery();
+    const lotterySnap = await getDoc(doc(db, 'lottery', 'current'));
+    let lottery = lotterySnap.exists() ? lotterySnap.data() : null;
 
     if (!lottery || lottery.status !== "open") {
         alert("Lottery is not open!");
@@ -41,29 +54,18 @@ function buyTicket() {
     let ticket = {
         user: user,
         number: number,
-        time: new Date().toLocaleString()
+        time: new Date().toLocaleString(),
+        avatar: (typeof currentUploadData !== 'undefined' && currentUploadData) ? currentUploadData : null
     };
 
-    // include uploaded avatar (dataURL) if present
-    try {
-        if (typeof currentUploadData !== 'undefined' && currentUploadData) {
-            ticket.avatar = currentUploadData;
-        }
-    } catch (e) { /* ignore */ }
-
-    lottery.tickets.push(ticket);
-
-    save(lottery);
-
-    document.getElementById("buyMessage").innerText =
-        "Ticket purchased 👍";
-
-    saveHistory(user, ticket);
+    await addDoc(collection(db, 'lottery', 'current', 'tickets'), ticket);
+    document.getElementById("buyMessage").innerText = "Ticket purchased 👍";
+    await saveHistory(user, ticket);
 }
 
 
 // Load user tickets only
-function loadHistory() {
+async function loadHistory() {
     let user = document.getElementById("username").value.trim();
 
     if (!user) {
@@ -71,35 +73,31 @@ function loadHistory() {
         return;
     }
 
-    let allHistory = JSON.parse(localStorage.getItem("history")) || {};
-    let myTickets = allHistory[user] || [];
+    const ticketsSnap = await getDocs(collection(db, 'lottery', 'current', 'tickets'));
+    let myTickets = [];
+    ticketsSnap.forEach(docSnap => {
+        let t = docSnap.data();
+        if (t.user === user) myTickets.push(t);
+    });
 
-    document.getElementById("historyList").textContent =
-        JSON.stringify(myTickets, null, 4);
+    document.getElementById("historyList").textContent = JSON.stringify(myTickets, null, 4);
 }
 
 
 // Save purchase history
-function saveHistory(user, ticket) {
-    let history = JSON.parse(localStorage.getItem("history")) || {};
-
-    if (!history[user]) {
-        history[user] = [];
-    }
-
-    history[user].push(ticket);
-
-    localStorage.setItem("history", JSON.stringify(history));
+async function saveHistory(user, ticket) {
+    await addDoc(collection(db, 'users', user, 'history'), ticket);
 }
 
 
 // Helpers
-function getLottery() {
-    return JSON.parse(localStorage.getItem("lottery")) || {};
+async function getLottery() {
+    const lotterySnap = await getDoc(doc(db, 'lottery', 'current'));
+    return lotterySnap.exists() ? lotterySnap.data() : {};
 }
 
-function save(data) {
-    localStorage.setItem("lottery", JSON.stringify(data));
+async function save(data) {
+    await setDoc(doc(db, 'lottery', 'current'), data);
 }
 // holds the last uploaded image dataURL (resized) so it can be attached to a ticket
 let currentUploadData = null;

@@ -1,5 +1,27 @@
+import { db, collection, getDoc, getDocs, setDoc, doc, addDoc, updateDoc, deleteDoc, onSnapshot } from './firebase-init.js';
+
+// Custom styled alert
+function showStyledAlert(message) {
+    let modal = document.createElement('div');
+    modal.style.position = 'fixed';
+    modal.style.top = '50%';
+    modal.style.left = '50%';
+    modal.style.transform = 'translate(-50%, -50%)';
+    modal.style.background = '#222';
+    modal.style.color = '#fff';
+    modal.style.padding = '32px 48px';
+    modal.style.borderRadius = '16px';
+    modal.style.boxShadow = '0 4px 32px #0008';
+    modal.style.fontSize = '1.3rem';
+    modal.style.zIndex = 9999;
+    modal.style.textAlign = 'center';
+    modal.innerHTML = `<div style="margin-bottom:12px;">${message}</div><button style="padding:8px 24px;border:none;background:#00ffcc;color:#222;border-radius:8px;font-size:1rem;cursor:pointer;">OK</button>`;
+    modal.querySelector('button').onclick = () => document.body.removeChild(modal);
+    document.body.appendChild(modal);
+}
+
 // Create new round
-function createRound() {
+export async function createRound() {
     let name = document.getElementById("roundName").value || "Round";
     let price = Number(document.getElementById("ticketPrice").value);
 
@@ -12,115 +34,125 @@ function createRound() {
         roundName: name,
         ticketPrice: price,
         status: "not_started",
-        tickets: [],
         winningNumber: null,
         winners: []
     };
 
-    localStorage.setItem("lottery", JSON.stringify(lottery));
-
-    alert("New Round Created!");
+    await setDoc(doc(db, 'lottery', 'current'), lottery);
+    document.getElementById("roundName").value = "";
+    document.getElementById("ticketPrice").value = "";
+    showStyledAlert('🎉 New Round Created!');
 }
+
+// Expose to window for inline HTML event handlers
+window.createRound = createRound;
 
 
 // Start the lottery
-function startLottery() {
-    let lottery = getLottery();
+export async function startLottery() {
+    let lottery = await getLottery();
     lottery.status = "open";
-    
-    save(lottery);
-    alert("Lottery Started!");
+    await save(lottery);
+    showStyledAlert('🚦 Lottery Started!');
 }
+window.startLottery = startLottery;
 
 
 // Stop lottery (no more selling)
-function stopLottery() {
-    let lottery = getLottery();
+export async function stopLottery() {
+    let lottery = await getLottery();
     lottery.status = "closed";
-    
-    save(lottery);
-    alert("Lottery Stopped!");
+    await save(lottery);
+    showStyledAlert('⏹️ Lottery Stopped!');
 }
+window.stopLottery = stopLottery;
 
 
 // Set winning number
-function setWinningNumber() {
+async function setWinningNumber() {
     let number = Number(document.getElementById("winningNumber").value);
-    let lottery = getLottery();
+    let lottery = await getLottery();
 
     if (isNaN(number)) {
-        alert("Enter a number!");
+        showStyledAlert("Enter a number!");
         return;
     }
 
     lottery.winningNumber = number;
 
-    // Find winners
-    lottery.winners = lottery.tickets.filter(t => t.number == number);
+    // Find winners from Firestore tickets
+    const ticketsSnap = await getDocs(collection(db, 'lottery', 'current', 'tickets'));
+    let winners = [];
+    ticketsSnap.forEach(docSnap => {
+        let t = docSnap.data();
+        if (t.number == number) winners.push(t);
+    });
+    lottery.winners = winners;
 
-    save(lottery);
+    await save(lottery);
 
     document.getElementById("winnerText").innerText =
         "Winning Number: " + number + 
         " | Winners: " + lottery.winners.length;
 
-    alert("Winner Declared!");
+    showStyledAlert("🏆 Winner Declared!");
 }
 
 
 // View buyers
-function viewBuyers() {
-    let lottery = getLottery();
-    document.getElementById("buyerList").textContent =
-        JSON.stringify(lottery.tickets, null, 4);
+async function viewBuyers() {
+    const ticketsSnap = await getDocs(collection(db, 'lottery', 'current', 'tickets'));
+    let tickets = [];
+    ticketsSnap.forEach(docSnap => tickets.push(docSnap.data()));
+    document.getElementById("buyerList").textContent = JSON.stringify(tickets, null, 4);
 }
 
 
 // View winners
-function viewWinners() {
-    let lottery = getLottery();
-    document.getElementById("winnerList").textContent =
-        JSON.stringify(lottery.winners, null, 4);
+async function viewWinners() {
+    let lottery = await getLottery();
+    document.getElementById("winnerList").textContent = JSON.stringify(lottery.winners, null, 4);
 }
 
 
 // Helper: load lottery
-function getLottery() {
-    return JSON.parse(localStorage.getItem("lottery")) || {};
+async function getLottery() {
+    const lotterySnap = await getDoc(doc(db, 'lottery', 'current'));
+    return lotterySnap.exists() ? lotterySnap.data() : {};
 }
 
 // Helper: save lottery
-function save(data) {
-    localStorage.setItem("lottery", JSON.stringify(data));
+async function save(data) {
+    await setDoc(doc(db, 'lottery', 'current'), data);
 }
 
 // Set countdown end time (from admin datetime-local input)
-function setCountdown() {
+async function setCountdown() {
     const input = document.getElementById('countdownAt');
     if (!input || !input.value) {
-        alert('Choose a date and time first');
+        showStyledAlert('Choose a date and time first');
         return;
     }
 
     const dt = new Date(input.value);
     if (isNaN(dt.getTime())) {
-        alert('Invalid date/time');
+        showStyledAlert('Invalid date/time');
         return;
     }
 
-    const lottery = getLottery();
+    const lottery = await getLottery();
     lottery.countdownEnd = dt.getTime();
-    save(lottery);
-    alert('Live time set for: ' + dt.toString());
+    await save(lottery);
+    showStyledAlert('Live time set for: ' + dt.toString());
     showCountdownInfo();
 }
 
-function clearCountdown() {
-    const lottery = getLottery();
+async function clearCountdown() {
+    const lottery = await getLottery();
     delete lottery.countdownEnd;
     delete lottery.countdownSeconds;
-    save(lottery);
-    alert('Live time cleared');
+    await save(lottery);
+    showStyledAlert('Live time cleared');
     showCountdownInfo();
 }
 
@@ -161,8 +193,8 @@ function resetDraw() {
         localStorage.removeItem('liveWinner');
         // also broadcast the reset so any open live pages can react
         localStorage.setItem('liveWinnerReset', JSON.stringify({ k: Math.random(), t: Date.now() }));
-        alert('Draw reset — winner cleared.');
+    showStyledAlert('Draw reset — winner cleared.');
     } catch (e) {
-        alert('Failed to reset draw: ' + e);
+    showStyledAlert('Failed to reset draw: ' + e);
     }
 }
